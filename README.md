@@ -11,6 +11,57 @@ The local-generation baseline covers excessive agency, tool discovery, PII
 leakage, authorization failures, and Base64 transformations. These tests can cause real
 agent actions. They are not safe against a production agent or production data.
 
+## How it works
+
+This is an LLM-assisted red-team evaluation, not a static manifest or network
+scanner. Promptfoo coordinates two different systems:
+
+1. The attacker/grader LLM (`openai:chat:gpt-4.1-mini` by default) helps create
+   adversarial prompts from the configured purpose, plugins, and strategies.
+2. Promptfoo sends each generated prompt to the OpenClaw `default` agent through
+   the Gateway's OpenAI-compatible Chat Completions endpoint.
+3. OpenClaw handles the prompt normally. It may read memory or files and invoke
+   any tools that the test agent is permitted to use.
+4. The attacker/grader LLM evaluates OpenClaw's response against the relevant
+   security policy. Promptfoo records the response, grade, and explanation.
+5. The Job saves machine-readable JSON and a generated Markdown report on the
+   results PVC. `scripts/collect-results.sh` copies those artifacts locally.
+
+```text
+test configuration
+       |
+       v
+Promptfoo <----> attacker/grader LLM
+       |
+       | adversarial prompt
+       v
+OpenClaw Gateway --> default agent --> permitted tools, files, and memory
+       |
+       | response
+       v
+Promptfoo --> JSON + Markdown report on the PVC
+```
+
+The attacker/grader is involved before and after the target call: it generates
+tests and judges responses. It is not the system being tested; OpenClaw is the
+target. A passing grade describes the observed response and does not prove that
+OpenClaw avoided a hidden tool call or side effect, so results must be correlated
+with logs, traces, filesystem changes, network telemetry, and agent memory.
+
+### Data flow and safety boundary
+
+`PROMPTFOO_DISABLE_REDTEAM_REMOTE_GENERATION=true` disables Promptfoo's hosted
+red-team generation service. It does **not** make this bundle fully local. With
+the default configuration, test-generation inputs, OpenClaw responses, and
+grading context are sent to OpenAI because OpenAI is the configured
+attacker/grader provider. They are also retained in the results PVC.
+
+OpenClaw may execute real tools while processing an adversarial prompt. Run this
+only against a disposable agent with synthetic data, isolated memory and files,
+restricted tools and network access, and no production messaging channels.
+Replace the attacker/grader provider with an approved internal model if prompts
+and responses must remain inside your environment.
+
 ## Prerequisites
 
 - `oc` access with permission to create a Job, ConfigMaps, Secret, PVC, and
