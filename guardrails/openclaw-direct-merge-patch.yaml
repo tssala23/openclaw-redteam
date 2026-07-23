@@ -10,7 +10,9 @@ spec:
     inClusterBypass: false
     additionalEgress: []
   config:
-    mergeMode: merge
+    # Clear guarded model settings retained in the persistent configuration.
+    # Restore merge mode only after this direct configuration has rolled out.
+    mergeMode: overwrite
     raw:
       agents:
         defaults:

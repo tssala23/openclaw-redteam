@@ -115,8 +115,17 @@ oc rollout status deployment/instance -n redteam
 ```
 
 The rollback patch restores the OpenAI credential, original primary and
-fallback models, `merge` configuration behavior, and the default network path.
-Verify that OpenClaw is Ready and can answer a normal request.
+fallback models, and the default network path. It initially retains `overwrite`
+mode so guarded settings in the persistent configuration cannot survive the
+rollback. Verify that the effective primary is `openai/gpt-5.5` and that
+OpenClaw can answer a normal request. If the original `merge` behavior is
+required, restore it only after that verification:
+
+```bash
+oc patch claw instance -n redteam --type=merge \
+  -p '{"spec":{"config":{"mergeMode":"merge"}}}'
+oc rollout status deployment/instance -n redteam
+```
 
 NeMo can remain deployed but unused. To remove it after direct routing works:
 
