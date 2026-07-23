@@ -8,8 +8,11 @@ team generation, and does not deploy Promptfoo's unauthenticated community UI.
 ## What it tests
 
 The local-generation baseline covers excessive agency, tool discovery, PII
-leakage, authorization failures, and Base64 transformations. These tests can cause real
-agent actions. They are not safe against a production agent or production data.
+leakage, authorization failures, prompt extraction, Base64 transformations, and
+known jailbreak templates. These tests can cause real agent actions. They are
+not safe against a production agent or production data. See [COVERAGE.md](COVERAGE.md)
+for the coverage model, available expansion options, and their cost and safety
+tradeoffs.
 
 ## How it works
 
@@ -164,7 +167,12 @@ Edit `config/promptfooconfig.yaml` before every environment's first run:
 
 - Make `purpose` accurately describe allowed and prohibited behavior.
 - Remove plugins irrelevant to your agent.
-- Keep `numTests: 5` for the first run.
+- Keep `numTests: 2` for the first run with the expanded strategy set.
+
+The checked-in profile includes original probes, Base64 variants, and static
+jailbreak templates. Strategies can multiply the number of target and grader
+calls. Read [COVERAGE.md](COVERAGE.md) before adding encodings, application-level
+plugins, hosted generation, or adaptive multi-turn attacks.
 
 `PROMPTFOO_DISABLE_REDTEAM_REMOTE_GENERATION=true` prevents use of Promptfoo's
 hosted generation service. Prompts and target responses are still sent to the

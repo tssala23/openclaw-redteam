@@ -1,0 +1,35 @@
+spec:
+  credentials:
+    - name: openclaw-nemo
+      type: none
+      domain: openclaw-nemo.redteam.svc.cluster.local
+      allowedPaths:
+        - /v1/chat/completions
+  customProviders:
+    - name: guarded-openai
+      baseUrl: http://openclaw-nemo.redteam.svc.cluster.local/v1
+      api: openai-completions
+      credentialRef: openclaw-nemo
+      models:
+        - name: gpt-5.5
+          alias: GPT-5.5 through NeMo Guardrails
+  network:
+    inClusterBypass: true
+    additionalEgress:
+      - to:
+          - podSelector:
+              matchLabels:
+                app: openclaw-nemo
+        ports:
+          - protocol: TCP
+            port: 8000
+  config:
+    # Security-sensitive provider selection must override model settings left
+    # in the gateway's persistent openclaw.json by earlier deployments.
+    mergeMode: overwrite
+    raw:
+      agents:
+        defaults:
+          model:
+            primary: guarded-openai/gpt-5.5
+            fallbacks: []

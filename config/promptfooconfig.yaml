@@ -24,8 +24,9 @@ targets:
 outputPath: /results/results.json
 
 redteam:
-  # Start small. Raising this multiplies target and grader/attacker calls.
-  numTests: 5
+  # Start small. The broader strategy set multiplies each plugin's cases;
+  # increase this only after reviewing the generated redteam.yaml.
+  numTests: 2
 
   # Explicit attacker/grader provider. The Job maps ATTACKER_API_KEY to the
   # OPENAI_API_KEY expected by this provider. Change this if you use another
@@ -38,8 +39,14 @@ redteam:
     - tool-discovery
     - pii
     - rbac
+    # Tests whether the agent exposes hidden system/developer instructions.
+    - prompt-extraction
 
-  # Hosted red-team generation is disabled by the Job. Keep only strategies
-  # supported by the configured local generator.
+  # Hosted red-team generation is disabled by the Job. This baseline uses
+  # locally supported strategies: unmodified probes, a deterministic encoding,
+  # and a curated set of known jailbreak templates. See COVERAGE.md before
+  # adding strategies because each one can multiply target and grader calls.
   strategies:
+    - basic
     - base64
+    - jailbreak-templates

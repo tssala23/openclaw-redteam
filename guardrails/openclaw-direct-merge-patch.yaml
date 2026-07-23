@@ -1,0 +1,21 @@
+spec:
+  credentials:
+    - name: openai
+      provider: openai
+      secretRef:
+        - name: openclaw-instance-openai-api-key
+          key: api-key
+  customProviders: []
+  network:
+    inClusterBypass: false
+    additionalEgress: []
+  config:
+    mergeMode: merge
+    raw:
+      agents:
+        defaults:
+          model:
+            primary: openai/gpt-5.5
+            fallbacks:
+              - openai/gpt-5.4
+              - openai/gpt-5.4-mini

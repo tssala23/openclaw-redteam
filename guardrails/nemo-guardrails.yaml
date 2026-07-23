@@ -1,0 +1,21 @@
+apiVersion: trustyai.opendatahub.io/v1alpha1
+kind: NemoGuardrails
+metadata:
+  name: openclaw-nemo
+  labels:
+    app.kubernetes.io/name: openclaw-nemo-guardrails
+spec:
+  replicas: 1
+  nemoConfigs:
+    - name: openclaw-security
+      configMaps:
+        - openclaw-nemo-config
+      default: true
+  env:
+    # The first integration uses the existing model credential. Unlike the Claw
+    # gateway, this places the key in the NeMo pod. See guardrails/README.md.
+    - name: OPENAI_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: openclaw-instance-openai-api-key
+          key: api-key

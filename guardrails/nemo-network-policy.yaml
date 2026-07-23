@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: openclaw-nemo-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: openclaw-nemo
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: claw
+              claw.sandbox.redhat.com/instance: instance
+      ports:
+        - protocol: TCP
+          port: 8000
