@@ -107,6 +107,19 @@ http://instance.redteam.svc.cluster.local:18789
 The bundle includes an additive NetworkPolicy that permits only its labeled Job
 to reach this gateway within the `redteam` namespace.
 
+This example deliberately uses HTTP over the cluster-internal Service. The
+Gateway does not enable TLS by default, and the path is limited by the namespace
+and NetworkPolicy. The bearer token is therefore not encrypted on the cluster
+overlay network. Environments that do not trust that path must enable Gateway
+TLS, distribute its CA certificate to the Job, and change the URL to `https`.
+
+The Job needs external access to the configured attacker/grader API. This
+portable example does not add an egress-deny policy because standard Kubernetes
+NetworkPolicy cannot allow an API by DNS name and clusters differ in their
+egress controls. In a controlled environment, route the Job through an approved
+egress proxy and add a policy allowing only DNS, the OpenClaw Gateway, and that
+proxy.
+
 ## 2. Create the runtime credentials
 
 The runtime ConfigMap is included in the bundle with the internal URL above.
@@ -139,23 +152,16 @@ Do not apply `manifests/secret.example.yaml`; it is documentation only.
 
 ## 3. Verify the target before scanning
 
-Launch a temporary curl pod. This prompt is benign but exercises the same
-Gateway endpoint and agent selection used by Promptfoo:
+Launch the temporary curl pod. Its token is read directly from the Kubernetes
+Secret rather than copied into local command arguments or Pod metadata. This
+prompt is benign but exercises the same Gateway endpoint and agent selection
+used by Promptfoo:
 
 ```bash
-TOKEN="$(oc get secret claw-redteam-secrets -n redteam \
-  -o jsonpath='{.data.OPENCLAW_GATEWAY_TOKEN}' | base64 -d)"
-URL="$(oc get configmap claw-redteam-runtime -n redteam \
-  -o jsonpath='{.data.OPENCLAW_GATEWAY_URL}')"
-
-oc run claw-api-check -n redteam --rm -i --restart=Never \
-  --image=curlimages/curl --env="TOKEN=${TOKEN}" --env="URL=${URL}" -- \
-  sh -c 'curl -fsS -H "Authorization: Bearer ${TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d '\''{"model":"openclaw/default","messages":[{"role":"user","content":"Reply only with READY"}]}'\'' \
-    "${URL}/v1/chat/completions"'
-
-unset TOKEN URL
+oc delete pod claw-api-check -n redteam --ignore-not-found
+oc apply -n redteam -f manifests/target-check.yaml
+oc logs -n redteam -f pod/claw-api-check
+oc delete pod claw-api-check -n redteam
 ```
 
 If this fails, fix Service routing, NetworkPolicy, Gateway authentication, or
