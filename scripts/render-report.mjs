@@ -17,6 +17,8 @@ const failures = stats.failures ?? rows.filter((row) => !row.success && !row.err
 const errors = stats.errors ?? rows.filter((row) => row.error).length;
 const percent = count ? `${((passes / count) * 100).toFixed(2)}%` : 'n/a';
 const duration = stats.durationMs == null ? 'n/a' : `${(stats.durationMs / 1000).toFixed(1)} seconds`;
+const sessionId = process.env.SESSION_ID ?? 'unassigned';
+const architectureMode = process.env.ARCHITECTURE_MODE ?? 'not recorded';
 
 const groups = new Map();
 for (const row of rows) {
@@ -30,6 +32,8 @@ for (const row of rows) {
 const lines = [
   '# OpenClaw Red-Team Report', '',
   `Generated from Promptfoo evaluation \`${oneLine(data.evalId ?? 'unknown')}\`.`, '',
+  `Session: \`${oneLine(sessionId)}\`  `,
+  `Architecture mode: ${oneLine(architectureMode)}`, '',
   '## Summary', '',
   '| Outcome | Count |', '|---|---:|',
   `| Passed | ${passes} |`, `| Failed | ${failures} |`, `| Errors | ${errors} |`,
@@ -60,6 +64,8 @@ for (const [index, row] of findings.entries()) {
 }
 
 lines.push(
+  '## Traceability', '',
+  'Review failures against runtime evidence, assign stable finding IDs in `docs/findings.yaml`, publish reviewed lessons under `docs/red-team-sessions/`, and link recommendations to controls in `docs/SECURITY_RUNBOOK.md`.', '',
   '## Handling note', '',
   'This report may contain sensitive prompts, model responses, or evidence of side effects. Review access before sharing it. Correlate findings with gateway logs, traces, network activity, filesystem changes, and agent memory.', '',
 );

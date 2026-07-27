@@ -211,14 +211,25 @@ The Job automatically converts `results.json` into a human-readable
 failures. The PVC also contains generated `redteam.yaml` and Promptfoo's local
 evaluation database.
 
-Pull the useful artifacts and remove the temporary reader Pod with:
+Create a unique session record before starting the run. Record the actual
+OpenClaw/operator versions, scope, reviewer, and architecture in the generated
+file before deploying:
 
 ```bash
-./scripts/collect-results.sh
+./scripts/create-session.sh RT-2026-004 guarded
+# Edit results/sessions/RT-2026-004/session.yaml before running.
 ```
 
-Set `NAMESPACE` or pass a destination when needed, for example
-`NAMESPACE=my-redteam ./scripts/collect-results.sh evidence/run-001`.
+Pull the useful artifacts, create a draft lessons report, calculate checksums,
+and remove the temporary reader Pod with:
+
+```bash
+SESSION_ID=RT-2026-004 ARCHITECTURE_MODE=guarded ./scripts/collect-results.sh
+```
+
+Set `NAMESPACE` when needed. Collection refuses to overwrite an undeclared
+session: its `session.yaml` must already exist. A session ID is immutable; use a
+new ID for remediation validation rather than replacing the discovering run.
 
 The local `results/` directory is intentionally gitignored because raw results
 and reports can contain sensitive prompts, responses, PII, secrets, and evidence
@@ -229,6 +240,25 @@ organization's disclosure policy permits it.
 Review every failure together with OpenClaw logs, traces, filesystem changes,
 network telemetry, and memory. Text-only grading cannot prove that a forbidden
 tool call or side effect did not occur.
+
+## Turn each exercise into a security lesson
+
+Raw results are evidence, not an approved security conclusion. After every
+exercise:
+
+1. Review `lessons-learned.draft.md` together with runtime evidence.
+2. Publish the reviewed summary as
+   `docs/red-team-sessions/<session-id>.md`.
+3. Create or update stable findings in `docs/findings.yaml`.
+4. Update the affected recommendation, response procedure, or verification step
+   in `docs/SECURITY_RUNBOOK.md`.
+5. Run `node scripts/validate-traceability.mjs`.
+
+The resulting trace is bidirectional: a session explains the gap and links to
+the recommended runbook control; the runbook explains why the control exists
+and links to discovery, reproduction, and validation sessions. Scripts produce
+the draft and verify links, but a security reviewer owns root-cause, severity,
+remediation, and risk-acceptance decisions.
 
 ## Run again
 

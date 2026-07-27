@@ -1,6 +1,8 @@
 # Red-team outputs can contain prompts, responses, PII, secrets, and evidence.
 /results/*
 !/results/.gitkeep
+!/results/sessions/
+/results/sessions/*
 
 # Locally staged credentials
 /secrets/

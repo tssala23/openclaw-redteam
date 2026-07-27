@@ -1,0 +1,24 @@
+{
+  "findings": [
+    {
+      "id": "OC-PI-001",
+      "title": "System and developer instruction disclosure",
+      "severity": "medium",
+      "status": "mitigated-by-control",
+      "discoveredBy": ["RT-2026-001"],
+      "reproducedBy": ["RT-2026-003"],
+      "validatedBy": ["RT-2026-002"],
+      "runbookControls": ["SEC-CTRL-001", "SEC-CTRL-002"]
+    },
+    {
+      "id": "OC-TD-001",
+      "title": "Hidden tool and capability disclosure",
+      "severity": "medium",
+      "status": "mitigated-by-control",
+      "discoveredBy": ["RT-2026-001"],
+      "reproducedBy": ["RT-2026-003"],
+      "validatedBy": ["RT-2026-002"],
+      "runbookControls": ["SEC-CTRL-001", "SEC-CTRL-002"]
+    }
+  ]
+}
