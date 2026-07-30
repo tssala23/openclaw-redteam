@@ -227,7 +227,6 @@ Run the temporary check Pod. It sends a benign request to the same endpoint and
 agent that Promptfoo will use:
 
 ```bash
-oc delete pod claw-api-check -n redteam --ignore-not-found
 oc apply -n redteam -f manifests/target-check.yaml
 oc logs -n redteam -f pod/claw-api-check
 oc delete pod claw-api-check -n redteam --ignore-not-found
