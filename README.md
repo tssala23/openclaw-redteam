@@ -67,22 +67,48 @@ and responses must remain inside your environment.
 
 ## Prerequisites
 
-- `oc` access with permission to create a Job, ConfigMaps, Secret, PVC, and
-  NetworkPolicy in the `redteam` namespace.
-- An OpenClaw Gateway reachable through a cluster Service.
-- A disposable OpenClaw agent whose ID is exactly `default`.
-- An API key for the configured attacker/grader (`openai:chat:gpt-4.1-mini`).
-- Cluster egress to that attacker model's API.
+This guide assumes that the OpenClaw resource is named `instance`, the test
+agent is named `default`, and both OpenClaw and the test Job run in the existing
+`redteam` namespace. Run all commands from the root of this repository.
 
-The `default` agent should have its own disposable workspace and memory, no
-production messaging channels, synthetic secrets, constrained tool policy,
-restricted network access, and request/spend limits. The Gateway HTTP bearer
-credential is an operator credential, so protect it accordingly.
+You need:
 
-## 1. Enable the OpenClaw HTTP endpoint
+- The `oc` command-line tool, logged in to the correct OpenShift cluster.
+- Permission to create a Job, Pods, ConfigMaps, a Secret, a PVC, and a
+  NetworkPolicy in `redteam`.
+- An OpenClaw Gateway exposed through a cluster Service.
+- The OpenClaw Gateway/operator bearer token.
+- An API key for the attacker/grader model (`openai:chat:gpt-4.1-mini` by
+  default), plus cluster egress to that model's API.
 
-OpenClaw disables Chat Completions by default. Enable it on the installed
-`Claw` resource:
+Check that you are using the intended cluster and namespace:
+
+```bash
+oc whoami --show-server
+oc project redteam
+oc get claw instance -n redteam
+```
+
+If your namespace, resource name, agent name, Service name, or port differs,
+update `kustomization.yaml`, `manifests/runtime-config.yaml`,
+`manifests/networkpolicy.yaml`, and the `openclaw:default` target in
+`config/promptfooconfig.yaml` as applicable before continuing.
+
+The target agent should be disposable. Give it synthetic data, isolated memory
+and files, no production messaging channels, restricted tools and network
+access, and request/spend limits. The tests may cause real agent actions.
+
+## 1. Check the OpenClaw Gateway
+
+Promptfoo uses the Gateway's OpenAI-compatible Chat Completions endpoint.
+OpenClaw disables this endpoint by default. Check the current configuration:
+
+```bash
+oc get claw instance -n redteam -o yaml
+```
+
+Under the Gateway configuration, confirm that `chatCompletions.enabled` is
+`true`. If it is not, enable it:
 
 ```bash
 oc patch claw instance -n redteam --type=merge -p '{
@@ -92,39 +118,55 @@ oc patch claw instance -n redteam --type=merge -p '{
 }'
 ```
 
-Confirm the OpenClaw Service and port:
+List the Services and confirm the Gateway Service and port:
 
 ```bash
-oc get svc -n <openclaw-namespace>
+oc get svc -n redteam
 ```
 
-The URL must be the Gateway origin, without `/v1`, for example:
+`manifests/runtime-config.yaml` must contain the Gateway origin without `/v1`.
+For the default names, it is:
 
 ```text
 http://instance.redteam.svc.cluster.local:18789
 ```
 
-The bundle includes an additive NetworkPolicy that permits only its labeled Job
-to reach this gateway within the `redteam` namespace.
+The included NetworkPolicy expects the Gateway pods to have the labels
+`app=claw` and `claw.sandbox.redhat.com/instance=instance`. Confirm them with:
 
-This example deliberately uses HTTP over the cluster-internal Service. The
-Gateway does not enable TLS by default, and the path is limited by the namespace
-and NetworkPolicy. The bearer token is therefore not encrypted on the cluster
-overlay network. Environments that do not trust that path must enable Gateway
-TLS, distribute its CA certificate to the Job, and change the URL to `https`.
+```bash
+oc get pods -n redteam --show-labels
+```
 
-The Job needs external access to the configured attacker/grader API. This
-portable example does not add an egress-deny policy because standard Kubernetes
-NetworkPolicy cannot allow an API by DNS name and clusters differ in their
-egress controls. In a controlled environment, route the Job through an approved
-egress proxy and add a policy allowing only DNS, the OpenClaw Gateway, and that
-proxy.
+This example uses HTTP over the cluster-internal network, so the bearer token is
+not encrypted on that path. Environments that do not trust the cluster overlay
+must configure Gateway TLS and change the URL to `https`.
 
-## 2. Create the runtime credentials
+## 2. Review what will be tested
 
-The runtime ConfigMap is included in the bundle with the internal URL above.
+Open `config/promptfooconfig.yaml` and review it before the first run in each
+environment:
 
-Put each credential in a local file without a trailing newline:
+- Change `purpose` so it accurately describes what the agent is allowed and
+  prohibited from doing. Promptfoo uses this text when generating and grading
+  tests.
+- Remove plugins that are not relevant to the agent.
+- Keep `numTests: 2` for the first run. Increasing it can significantly increase
+  model calls, cost, runtime, and possible side effects.
+- Keep the target as `openclaw:default` when the agent is named `default`.
+
+The checked-in profile includes original probes, Base64 variants, and known
+jailbreak templates. Read [COVERAGE.md](COVERAGE.md) before expanding it.
+
+Hosted Promptfoo red-team generation is disabled, but this is not a fully local
+test. With the default configuration, test-generation inputs, OpenClaw
+responses, and grading context are sent to OpenAI. Use an approved internal
+provider instead if those data must remain inside your environment.
+
+## 3. Create the runtime Secret
+
+Place each credential in a temporary local file without a trailing newline.
+This avoids putting the credentials directly in Kubernetes object metadata:
 
 ```bash
 mkdir -p secrets
@@ -132,133 +174,152 @@ printf %s 'OPENCLAW_OPERATOR_TOKEN' > secrets/openclaw-token
 printf %s 'ATTACKER_MODEL_API_KEY' > secrets/attacker-api-key
 ```
 
-Create the Secret:
+Replace the two placeholder values above, then create or update the Secret:
 
 ```bash
 oc create secret generic claw-redteam-secrets \
   -n redteam \
   --from-file=OPENCLAW_GATEWAY_TOKEN=secrets/openclaw-token \
-  --from-file=ATTACKER_API_KEY=secrets/attacker-api-key
+  --from-file=ATTACKER_API_KEY=secrets/attacker-api-key \
+  --dry-run=client -o yaml | oc apply -f -
 ```
 
-Delete the local files once the Secret is confirmed:
+Confirm that the Secret exists, then delete the local credential files:
 
 ```bash
 oc get secret claw-redteam-secrets -n redteam
 rm -f secrets/openclaw-token secrets/attacker-api-key
+rmdir secrets
 ```
 
 Do not apply `manifests/secret.example.yaml`; it is documentation only.
 
-## 3. Verify the target before scanning
+## 4. Create a session record
 
-Launch the temporary curl pod. Its token is read directly from the Kubernetes
-Secret rather than copied into local command arguments or Pod metadata. This
-prompt is benign but exercises the same Gateway endpoint and agent selection
-used by Promptfoo:
+Every run needs a unique ID so that one run cannot overwrite another run's
+local evidence. Use the next unused ID and describe the architecture being
+tested. For a direct OpenClaw route without external guardrails, for example:
+
+```bash
+./scripts/create-session.sh RT-2026-004 direct
+```
+
+Before starting the scan, edit
+`results/sessions/RT-2026-004/session.yaml`. Replace
+`RECORD-BEFORE-RUN`, `REVIEW-BEFORE-RUN`, and `UNASSIGNED`, and verify the model
+versions and architecture details. Use your actual session ID in all later
+commands.
+
+## 5. Verify connectivity before scanning
+
+First apply only the runtime configuration and NetworkPolicy needed by the
+temporary check Pod:
+
+```bash
+oc apply -n redteam -f manifests/runtime-config.yaml
+oc apply -n redteam -f manifests/networkpolicy.yaml
+```
+
+Do not use `oc apply -k .` yet: the main kustomization also creates the red-team
+Job and would start the scan before this check completes.
+
+Run the temporary check Pod. It sends a benign request to the same endpoint and
+agent that Promptfoo will use:
 
 ```bash
 oc delete pod claw-api-check -n redteam --ignore-not-found
 oc apply -n redteam -f manifests/target-check.yaml
 oc logs -n redteam -f pod/claw-api-check
-oc delete pod claw-api-check -n redteam
+oc delete pod claw-api-check -n redteam --ignore-not-found
 ```
 
-If this fails, fix Service routing, NetworkPolicy, Gateway authentication, or
-the `default` agent before continuing.
+A successful JSON response should contain the answer `READY`. If the check
+fails, do not start the scan. Check the Gateway URL and port, Chat Completions
+setting, bearer token, `default` agent, Gateway pod labels, NetworkPolicy, and
+Gateway logs.
 
-## 4. Review the policy and attacks
+## 6. Deploy and run the scan
 
-Edit `config/promptfooconfig.yaml` before every environment's first run:
-
-- Make `purpose` accurately describe allowed and prohibited behavior.
-- Remove plugins irrelevant to your agent.
-- Keep `numTests: 2` for the first run with the expanded strategy set.
-
-The checked-in profile includes original probes, Base64 variants, and static
-jailbreak templates. Strategies can multiply the number of target and grader
-calls. Read [COVERAGE.md](COVERAGE.md) before adding encodings, application-level
-plugins, hosted generation, or adaptive multi-turn attacks.
-
-`PROMPTFOO_DISABLE_REDTEAM_REMOTE_GENERATION=true` prevents use of Promptfoo's
-hosted generation service. Prompts and target responses are still sent to the
-attacker/grader configured in the YAML—in this bundle, OpenAI. For an entirely
-on-premises flow, replace that provider with a supported internal model and
-change the corresponding Secret/environment variable.
-
-## 5. Deploy and run
-
-From this directory:
+Delete an old Job with the same name, if one exists, then apply the complete
+bundle. Deleting the Job does not delete the results PVC:
 
 ```bash
+oc delete job claw-redteam -n redteam --ignore-not-found
 oc apply -k .
 ```
 
-Watch the Job and logs:
+Check the created resources and follow the scan log:
 
 ```bash
 oc get pods,jobs,pvc -n redteam
 oc logs -n redteam -f job/claw-redteam
 ```
 
-The Job has `backoffLimit: 0`: a failed scan is not automatically repeated and
-cannot accidentally multiply calls or side effects.
+The Job has `backoffLimit: 0`, so OpenShift will not automatically repeat a
+failed scan. Promptfoo exits with status 100 when it finds security failures;
+therefore, the OpenShift Job may say `Failed` even though it successfully
+created results. A missing `results.json`, evaluation errors, or a Gateway
+restart indicates an incomplete or inconclusive run.
 
-## 6. Retrieve results
+## 7. Collect and review the results
 
-The Job automatically converts `results.json` into a human-readable
-`report.md`, even when Promptfoo exits with code 100 because it found security
-failures. The PVC also contains generated `redteam.yaml` and Promptfoo's local
-evaluation database.
-
-Create a unique session record before starting the run. Record the actual
-OpenClaw/operator versions, scope, reviewer, and architecture in the generated
-file before deploying:
+Use the session ID created in step 4. Set the architecture mode to the value
+recorded in that session:
 
 ```bash
-./scripts/create-session.sh RT-2026-004 guarded
-# Edit results/sessions/RT-2026-004/session.yaml before running.
+SESSION_ID=RT-2026-004 \
+ARCHITECTURE_MODE=direct \
+NAMESPACE=redteam \
+./scripts/collect-results.sh
 ```
 
-Pull the useful artifacts, create a draft lessons report, calculate checksums,
-and remove the temporary reader Pod with:
+This temporarily mounts the results PVC, copies the evidence into
+`results/sessions/RT-2026-004/`, generates a draft lessons report and checksums,
+and deletes the temporary reader Pod. It refuses to overwrite evidence already
+collected for that session.
 
-```bash
-SESSION_ID=RT-2026-004 ARCHITECTURE_MODE=guarded ./scripts/collect-results.sh
-```
+Review these files:
 
-Set `NAMESPACE` when needed. Collection refuses to overwrite an undeclared
-session: its `session.yaml` must already exist. A session ID is immutable; use a
-new ID for remediation validation rather than replacing the discovering run.
+- `report.md`: readable summary and failed cases.
+- `results.json`: complete machine-readable Promptfoo result.
+- `redteam.yaml`: exact generated test configuration.
+- `lessons-learned.draft.md`: prompts for the human security review.
+- `session.yaml`: the scope and component record created before the run.
+- `SHA256SUMS`: hashes for checking evidence integrity.
 
-The local `results/` directory is intentionally gitignored because raw results
-and reports can contain sensitive prompts, responses, PII, secrets, and evidence
-of agent side effects. Store retained artifacts in an access-controlled evidence
-system rather than Git. Only commit a reviewed, redacted report when your
-organization's disclosure policy permits it.
+Review every failure with Gateway logs, tool-call records, filesystem and memory
+changes, network telemetry, and external-system audit logs. A text-only pass
+does not prove that no hidden tool call or side effect occurred. Treat every
+evaluation error as inconclusive, not as a pass.
 
-Review every failure together with OpenClaw logs, traces, filesystem changes,
-network telemetry, and memory. Text-only grading cannot prove that a forbidden
-tool call or side effect did not occur.
+The local `results/` directory is gitignored because evidence can contain
+sensitive prompts, responses, PII, secrets, or agent side effects. Store raw
+artifacts in an access-controlled evidence system. Commit only a reviewed and
+appropriately redacted summary.
 
-## Turn each exercise into a security lesson
+## 8. Update findings and the security runbook
 
-Raw results are evidence, not an approved security conclusion. After every
-exercise:
+Raw results are evidence, not an approved security conclusion. After every run:
 
-1. Review `lessons-learned.draft.md` together with runtime evidence.
-2. Publish the reviewed summary as
+1. Review `lessons-learned.draft.md` and the runtime evidence. A security
+   reviewer must decide root cause, severity, impact, and remediation.
+2. Publish the reviewed and redacted summary as
    `docs/red-team-sessions/<session-id>.md`.
-3. Create or update stable findings in `docs/findings.yaml`.
+3. Add a new stable finding or update an existing one in `docs/findings.yaml`.
+   Record whether this session discovered, reproduced, or validated it.
 4. Update the affected recommendation, response procedure, or verification step
-   in `docs/SECURITY_RUNBOOK.md`.
-5. Run `node scripts/validate-traceability.mjs`.
+   in `docs/SECURITY_RUNBOOK.md`. A run with no new gaps may add validation
+   evidence to an existing control instead.
+5. Validate all links between sessions, findings, and runbook controls:
 
-The resulting trace is bidirectional: a session explains the gap and links to
-the recommended runbook control; the runbook explains why the control exists
-and links to discovery, reproduction, and validation sessions. Scripts produce
-the draft and verify links, but a security reviewer owns root-cause, severity,
-remediation, and risk-acceptance decisions.
+   ```bash
+   node scripts/validate-traceability.mjs
+   ```
+
+The validator expects every published session to reference a finding ID such as
+`OC-PI-001` and a runbook control such as `SEC-CTRL-002`. It also checks that the
+finding and runbook link back to the session. Use a new session ID for every
+remediation test; never replace the discovering run.
 
 ## Run again
 
