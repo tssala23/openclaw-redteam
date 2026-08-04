@@ -1,0 +1,16 @@
+session:
+  id: "@SESSION_ID@"
+  createdAt: "@CREATED@"
+  repositoryCommit: "@COMMIT@"
+  environment: redteam
+  architecture:
+    mode: "@ARCHITECTURE_MODE@"
+    openShellEnabled: false
+    target: "OpenClaw agent default"
+  components:
+    promptfoo: "0.121.19"
+    openClaw: "RECORD-BEFORE-RUN"
+    targetModel: "gpt-5.5"
+    classifierModel: "gpt-4.1-mini"
+  scope: "REVIEW-BEFORE-RUN"
+  reviewer: "UNASSIGNED"

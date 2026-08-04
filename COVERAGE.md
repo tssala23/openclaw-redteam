@@ -142,6 +142,23 @@ Neither tool can prove from response text alone that the agent avoided a hidden 
 
 Treat an evaluation error as inconclusive, not a pass. Separate unsafe responses, attempted prohibited actions, successful prohibited actions, and external side effects in the final assessment.
 
+## Findings and runbook traceability
+
+Every exercise has a stable `RT-YYYY-NNN` identifier. Reviewed lessons are
+stored under `docs/red-team-sessions/`; stable findings and their discovery,
+reproduction, validation, and control relationships are recorded in
+`docs/findings.yaml`. The living deployment security and incident-response
+procedures are in `docs/SECURITY_RUNBOOK.md`.
+
+Update the runbook after every exercise when evidence changes a recommendation,
+procedure, or verification step. A session with no new gaps should still be
+linked as validation evidence when it exercises an existing control. Validate
+the bidirectional links with:
+
+```bash
+node scripts/validate-traceability.mjs
+```
+
 ## References
 
 - [Promptfoo red-team plugins](https://www.promptfoo.dev/docs/red-team/plugins/)
